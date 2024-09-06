@@ -1,6 +1,7 @@
-import { Component } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { HttpClientModule, HttpClient } from '@angular/common/http';
 import { TaskFormComponent } from '../task-form/task-form.component';
 import { FilterPipe } from '../filter.pipe';
 import {
@@ -16,12 +17,12 @@ import {
 } from 'lucide-angular';
 
 interface Task {
-  id: number;
+  externalId: number;
   assignedTo: string;
   status: string;
   dueDate: string;
   priority: string;
-  comments: string;
+  description: string;
 }
 
 @Component({
@@ -30,6 +31,7 @@ interface Task {
   imports: [
     CommonModule,
     FormsModule,
+    HttpClientModule, // Add this line
     TaskFormComponent,
     FilterPipe,
     LucideAngularModule,
@@ -86,7 +88,7 @@ interface Task {
             <td class="p-2">{{ task.status }}</td>
             <td class="p-2">{{ task.dueDate }}</td>
             <td class="p-2">{{ task.priority }}</td>
-            <td class="p-2">{{ task.comments }}</td>
+            <td class="p-2">{{ task.description }}</td>
             <td class="p-2">
               <button
                 class="p-1 mr-2"
@@ -154,47 +156,31 @@ interface Task {
   `,
   ],
 })
-export class TaskListComponent {
-  tasks: Task[] = [
-    {
-      id: 1,
-      assignedTo: 'User 1',
-      status: 'Completed',
-      dueDate: '2024-10-12',
-      priority: 'Low',
-      comments: 'This task is good',
-    },
-    {
-      id: 2,
-      assignedTo: 'User 2',
-      status: 'In Progress',
-      dueDate: '2024-09-14',
-      priority: 'High',
-      comments: 'This',
-    },
-    {
-      id: 3,
-      assignedTo: 'User 3',
-      status: 'Not Started',
-      dueDate: '2024-08-18',
-      priority: 'Low',
-      comments: 'This',
-    },
-    {
-      id: 4,
-      assignedTo: 'User 4',
-      status: 'In Progress',
-      dueDate: '2024-06-12',
-      priority: 'Normal',
-      comments: 'This task is good',
-    },
-  ];
+export class TaskListComponent implements OnInit {
+  tasks: Task[] = [];
   itemsPerPage = 20;
   showNewTaskModal = false;
   showEditTaskModal = false;
   newTask: Partial<Task> = {};
   editingTask: Partial<Task> = {};
   searchText = '';
+
+  constructor(private http: HttpClient) {}
+
+  ngOnInit() {
+    this.fetchTasks();
+  }
+
+  fetchTasks() {
+    this.http.get<Task[] | null>('http://localhost:8080/api/tasks').subscribe(
+      (tasks) => {
+        this.tasks = tasks || [];
+      },
+      (error) => {
+        console.error('Error fetching tasks:', error);
+      }
+    );
+  }
 
   openNewTaskModal() {
     this.showNewTaskModal = true;
@@ -203,7 +189,7 @@ export class TaskListComponent {
       status: 'Not Started',
       dueDate: new Date().toISOString().split('T')[0],
       priority: 'Normal',
-      comments: '',
+      description: '',
     };
   }
 
@@ -212,12 +198,15 @@ export class TaskListComponent {
   }
 
   addNewTask(task: Partial<Task>) {
-    this.tasks.push({
-      id: this.tasks.length + 1,
-      ...task,
-      dueDate: new Date(task.dueDate!).toISOString().split('T')[0],
-    } as Task);
-    this.closeNewTaskModal();
+    this.http.post<Task>('http://localhost:8080/api/task', task).subscribe(
+      (newTask) => {
+        this.tasks.push(newTask);
+        this.closeNewTaskModal();
+      },
+      (error) => {
+        console.error('Error adding new task:', error);
+      }
+    );
   }
 
   openEditTaskModal(task: Task) {
@@ -230,20 +219,36 @@ export class TaskListComponent {
   }
 
   updateTask(updatedTask: Partial<Task>) {
-    const index = this.tasks.findIndex((t) => t.id === updatedTask.id);
-    if (index !== -1) {
-      this.tasks[index] = {
-        ...this.tasks[index],
-        ...updatedTask,
-        dueDate: new Date(updatedTask.dueDate!).toISOString().split('T')[0],
-      };
-    }
-    this.closeEditTaskModal();
+    this.http
+      .put<Task>(`/api/task/${updatedTask.externalId}`, updatedTask)
+      .subscribe(
+        (task) => {
+          const index = this.tasks.findIndex(
+            (t) => t.externalId === task.externalId
+          );
+          if (index !== -1) {
+            this.tasks[index] = task;
+          }
+          this.closeEditTaskModal();
+        },
+        (error) => {
+          console.error('Error updating task:', error);
+        }
+      );
   }
 
   deleteTask(task: Task) {
     if (confirm('Are you sure you want to delete this task?')) {
-      this.tasks = this.tasks.filter((t) => t.id !== task.id);
+      this.http.delete(`/api/task/${task.externalId}`).subscribe(
+        () => {
+          this.tasks = this.tasks.filter(
+            (t) => t.externalId !== task.externalId
+          );
+        },
+        (error) => {
+          console.error('Error deleting task:', error);
+        }
+      );
     }
   }
 }
